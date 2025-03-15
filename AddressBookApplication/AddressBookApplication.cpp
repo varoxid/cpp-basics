@@ -28,10 +28,11 @@ private:
     std::vector<std::shared_ptr<IObserver>> observers;
 };
 
+
 class Person {
 public:
-    Person(const std::string& name, const std::string& phone)
-        : name(name), phone(phone) {
+    Person(const std::string& name, const std::string& phone, const std::string& activity)
+        : name(name), phone(phone), activity(activity) {
     }
 
     virtual ~Person() = default;
@@ -43,44 +44,84 @@ public:
 
     std::string getName() const { return name; }
     std::string getPhone() const { return phone; }
+    std::string getActivity() const { return activity; }
 
 protected:
     std::string name;
     std::string phone;
+    std::string activity;
+};
+
+class IPersonBuilder {
+public:
+    virtual ~IPersonBuilder() = default;
+    virtual void setName(const std::string& name) = 0;
+    virtual void setPhone(const std::string& phone) = 0;
+    virtual void setActivity(const std::string& activity) = 0;
+    virtual std::shared_ptr<Person> build() = 0;
 };
 
 class Student : public Person {
 public:
-    Student(const std::string& name, const std::string& phone, const std::string& details)
-        : Person(name, phone), details(details) {
+    Student(const std::string& name, const std::string& phone, const std::string& activity, const std::string& details)
+        : Person(name, phone, activity), details(details) {
     }
 
     std::string toString() const override {
-        return "Student: " + name + ", Phone: " + phone + ", Details: " + details + '\n';
+        return "Student: " + name + ", Phone: " + phone +  ", Activity: " + activity + ", Details: " + details + '\n';
     }
 
     //TODO: move to Serializer
     std::string serialize() const override {
-        return "Student " + name + " " + phone + " " + details + "\n";
+        return "Student " + name + " " + phone + " "  + activity + " " + details + "\n";
     }
 
 private:
     std::string details;
 };
 
+class StudentBuilder : public IPersonBuilder {
+public:
+    void setName(const std::string& name) override {
+        this->name = name;
+    }
+
+    void setPhone(const std::string& phone) override {
+        this->phone = phone;
+    }
+
+    void setActivity(const std::string& activity) override {
+        this->activity = activity;
+    }
+
+    void setDetails(const std::string& details) {
+        this->details = details;
+    }
+
+    std::shared_ptr<Person> build() override {
+        return std::make_shared<Student>(name, phone, activity, details);
+    }
+
+private:
+    std::string name;
+    std::string phone;
+    std::string activity;
+    std::string details;
+};
+
 class Teacher : public Person {
 public:
-    Teacher(const std::string& name, const std::string& phone, const std::string& subject)
-        : Person(name, phone), subject(subject) {
+    Teacher(const std::string& name, const std::string& phone, const std::string& activity, const std::string& subject)
+        : Person(name, phone, activity), subject(subject) {
     }
 
     std::string toString() const override {
-        return "Teacher: " + name + ", Phone: " + phone + ", Subject: " + subject + "\n";
+        return "Teacher: " + name + ", Phone: " + phone + ", Activity: " + activity + ", Subject: " + subject + "\n";
     }
 
     //TODO: move to Serializer
     std::string serialize() const override {
-        return "Teacher " + name + " " + phone + " " + subject +"\n";
+        return "Teacher " + name + " " + phone + " " + activity + " " + subject +"\n";
     }
 
 private:
@@ -107,46 +148,14 @@ public:
     }
 };
 
-class IPersonBuilder {
-public:
-    virtual ~IPersonBuilder() = default;
-    virtual void setName(const std::string& name) = 0;
-    virtual void setPhone(const std::string& phone) = 0;
-    virtual std::shared_ptr<Person> build() = 0;
-};
-
-class StudentBuilder : public IPersonBuilder {
-public:
-    void setName(const std::string& name) override {
-        this->name = name;
-    }
-
-    void setPhone(const std::string& phone) override {
-        this->phone = phone;
-    }
-
-    std::shared_ptr<Person> build() override {
-        return std::make_shared<Student>(name, phone, details);
-    }
-
-    void setDetails(const std::string& details) {
-        this->details = details;
-    }
-
-private:
-    std::string name;
-    std::string phone;
-    std::string details;
-};
-
 class PersonFactory {
 public:
     enum class PersonType { Student, Teacher };
 
     static std::shared_ptr<Person> createPerson(PersonType type, const std::string& name, const std::string& phone) {
         switch (type) {
-        case PersonType::Student: return std::make_shared<Student>(name, phone, "IT");
-        case PersonType::Teacher: return std::make_shared<Teacher>(name, phone, "Math");
+        case PersonType::Student: return std::make_shared<Student>(name, phone, "Study", "IT");
+        case PersonType::Teacher: return std::make_shared<Teacher>(name, phone, "Teaching", "Math");
         default: return nullptr;
         }
     }
