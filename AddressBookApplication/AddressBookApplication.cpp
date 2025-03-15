@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <algorithm>
+#include <json/json.h>
 
 class IObserver {
 public:
@@ -13,7 +14,7 @@ public:
 
 class Observable {
 public:
-    void subscribe(std::shared_ptr<IObserver> observer) {
+    void addToSubscribtion(std::shared_ptr<IObserver> observer) {
         observers.push_back(observer);
     }
 
@@ -36,6 +37,8 @@ public:
     virtual ~Person() = default;
 
     virtual std::string toString() const = 0;
+
+    //TODO: move to Serializer
     virtual std::string serialize() const = 0;
 
     std::string getName() const { return name; }
@@ -56,6 +59,7 @@ public:
         return "Student: " + name + ", Phone: " + phone + ", Details: " + details + '\n';
     }
 
+    //TODO: move to Serializer
     std::string serialize() const override {
         return "Student " + name + " " + phone + " " + details + "\n";
     }
@@ -74,6 +78,7 @@ public:
         return "Teacher: " + name + ", Phone: " + phone + ", Subject: " + subject + "\n";
     }
 
+    //TODO: move to Serializer
     std::string serialize() const override {
         return "Teacher " + name + " " + phone + " " + subject +"\n";
     }
@@ -147,19 +152,63 @@ public:
     }
 };
 
-class PersonRepository : public Observable {
+class ObservablePersonRepository: public Observable {
 public:
-    static PersonRepository& getInstance() {
-        static PersonRepository instance;
-        return instance;
+    virtual ~ObservablePersonRepository() = default;
+    virtual void add(std::shared_ptr<Person> person) = 0;
+    virtual std::vector<std::string> findAllCached() const = 0;
+    virtual void persist(const std::string& collection) const = 0;
+};
+
+class JsonSerializerDeserializer {
+public:
+    JsonSerializerDeserializer() {};
+
+    template<typename T>
+    Json::Value toJson(const T& object) {
+        Json::Value data;
+
+        constexpr auto nbProperties = std::tuple_size<decltype(T::properties)>::value;
+
+        for_sequence(std::make_index_sequence<nbProperties>{}, [&](auto i) {
+            constexpr auto property = std::get<i>(T::properties);
+            data[property.name] = object.*(property.member);
+        });
+
+        return data;
     }
+
+    template<typename T>
+    T fromJson(const Json::Value& data) {
+        T object;
+
+        constexpr auto nbProperties = std::tuple_size<decltype(T::properties)>::value;
+
+        for_sequence(std::make_index_sequence<nbProperties>{}, [&](auto i) {
+            constexpr auto property = std::get<i>(T::properties);
+
+            using Type = typename decltype(property)::Type;
+
+            //TODO: fix deserialization
+            /*object.*(property.member) = 
+                Json::asAny<Type>(data[property.name]);*/
+
+        });
+
+        return object;
+    }
+};
+
+class FilePersonRepository : public ObservablePersonRepository {
+public:
+    FilePersonRepository() {};
 
     void add(std::shared_ptr<Person> person) {
         persons.push_back(person);
         publishAll("Person added: " + person->getName());
     }
 
-    std::vector<std::string> findAll() const {
+    std::vector<std::string> findAllCached() const {
         std::vector<std::string> toStringPersons;
         
         for (const auto& person : persons) {
@@ -172,6 +221,7 @@ public:
         std::ofstream out(collection);
         if (out.is_open()) {
             for (const auto& person : persons) {
+                //TODO: use Serializer
                 out << person->serialize();
             }
             out.close();
@@ -179,22 +229,19 @@ public:
     }
 
 private:
-    PersonRepository() = default;
     std::vector<std::shared_ptr<Person>> persons;
 };
 
 class PersonView : public IObserver {
 public:
-    PersonView() {
-        PersonRepository::getInstance().subscribe(std::make_shared<PersonView>(*this));
-    }
+    PersonView() {}
 
     void publish(const std::string& message) override {
         std::cout << "[Notification] " << message << std::endl;
     }
 
     void displayMenu() const {
-        std::cout << "1. Add Student\n2. Add Teacher\n3. Display All\n4. Save to File\n5. Exit\n";
+        std::cout << "1. Add Student\n2. Add Teacher\n3. Display cached\n4. Persist\n5. Exit\n";
     }
 
     std::string getInput(const std::string& prompt) const {
@@ -207,7 +254,9 @@ public:
 
 class PersonController {
 public:
-    PersonController(PersonView& view) : view(view) {}
+    PersonController(PersonView& view, ObservablePersonRepository& repository) : view(view), repository(repository) {
+        repository.addToSubscribtion(std::make_shared<PersonView>(view));
+    }
 
     void start() {
         int choice;
@@ -227,20 +276,23 @@ public:
     }
 
 private:
+    PersonView& view;
+    ObservablePersonRepository& repository;
+
     void addStudent() {
         std::string name = view.getInput("Enter name: ");
         std::string phone = view.getInput("Enter phone: ");
-        PersonRepository::getInstance().add(PersonFactory::createPerson(PersonFactory::PersonType::Student, name, phone));
+        repository.add(PersonFactory::createPerson(PersonFactory::PersonType::Student, name, phone));
     }
 
     void addTeacher() {
         std::string name = view.getInput("Enter name: ");
         std::string phone = view.getInput("Enter phone: ");
-        PersonRepository::getInstance().add(PersonFactory::createPerson(PersonFactory::PersonType::Teacher, name, phone));
+        repository.add(PersonFactory::createPerson(PersonFactory::PersonType::Teacher, name, phone));
     }
 
     void printAll() {
-        std::vector<std::string> toStringPersons = PersonRepository::getInstance().findAll();
+        std::vector<std::string> toStringPersons = repository.findAllCached();
 
         for (const auto& toStringPerson : toStringPersons) {
             std::cout << toStringPerson << std::endl;
@@ -248,16 +300,15 @@ private:
     }
 
     void store() {
-        std::string filename = view.getInput("Enter filename: ");
-        PersonRepository::getInstance().persist(filename);
+        std::string collection = view.getInput("Enter collection: ");
+        repository.persist(collection);
     }
-
-    PersonView& view;
 };
 
 int main() {
     PersonView view;
-    PersonController controller(view);
+    FilePersonRepository fileRepository;
+    PersonController controller(view, fileRepository);
     controller.start();
     return 0;
 }
